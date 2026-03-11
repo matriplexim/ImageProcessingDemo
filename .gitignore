@@ -1,0 +1,73 @@
+# ======================
+# Xcode
+# ======================
+
+# User-specific settings
+xcuserdata/
+*.xcuserstate
+
+# Derived data
+DerivedData/
+.build/
+
+# ======================
+# Swift Package Manager
+# ======================
+
+Packages/
+Package.resolved
+.swiftpm/
+
+# ======================
+# CocoaPods
+# ======================
+
+Pods/
+!Podfile
+!Podfile.lock
+
+# ======================
+# Carthage
+# ======================
+
+Carthage/Build/
+
+# ======================
+# Fastlane
+# ======================
+
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# ======================
+# Logs & temp files
+# ======================
+
+*.log
+*.tmp
+*.swp
+*.DS_Store
+
+# ======================
+# Playgrounds
+# ======================
+
+timeline.xctimeline
+playground.xcworkspace
+
+# ======================
+# Code coverage
+# ======================
+
+*.gcno
+*.gcda
+*.gcov
+
+# ======================
+# IDEs
+# ======================
+
+.idea/
+.vscode/

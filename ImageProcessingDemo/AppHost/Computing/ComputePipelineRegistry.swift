@@ -31,54 +31,41 @@ final class ComputePipelineRegistry {
         )
     }
 
-    func prepareByTexture(_ texture: MTLTexture) {
-        multiPassSobelPipeline.prepareResources(inputTexture: texture)
-        processingPipeline.prepareResources(inputTexture: texture)
+    func prepareByTexture(_ texture: MTLTexture) async {
+        await multiPassSobelPipeline.prepareResources(inputTexture: texture)
+        await processingPipeline.prepareResources(inputTexture: texture)
     }
 
     func encode(
         _ encoder: MTLComputeCommandEncoder,
-        key: ComputePipelineRegistry.SinglePassKey,
-        inputTexture: MTLTexture,
-        outputTexture: MTLTexture
-    ) {
+        key: ComputePipelineRegistry.PassKey,
+        texture: MTLTexture,
+        textureSet: inout PipelineTextureSet
+    ) async -> MTLTexture {
         switch key {
         case .grayscale:
-            singleGrayscalePipeline.encode(
+            await singleGrayscalePipeline.encode(
                 encoder,
-                inputTexture: inputTexture,
-                outputTexture: outputTexture
+                texture: texture,
+                textureSet: &textureSet
             )
         case .sobel:
-            singleSobelPipeline.encode(
+            await singleSobelPipeline.encode(
                 encoder,
-                inputTexture: inputTexture,
-                outputTexture: outputTexture
+                texture: texture,
+                textureSet: &textureSet
             )
-        }
-    }
-
-    func encode(
-        _ encoder: MTLComputeCommandEncoder,
-        key: ComputePipelineRegistry.MultiPassKey,
-        inputTexture: MTLTexture,
-        outputTexture: MTLTexture,
-        textureSet: inout PipelineTextureSet
-    ) {
-        switch key {
         case .multiPassSobel(let isOptimized):
-            multiPassSobelPipeline.encode(
+            await multiPassSobelPipeline.encode(
                 encoder,
-                inputTexture: inputTexture,
-                outputTexture: outputTexture,
+                texture: texture,
                 textureSet: &textureSet,
                 isOptimized: isOptimized
             )
         case .processing(let isOptimized):
-            processingPipeline.encode(
+            await processingPipeline.encode(
                 encoder,
-                inputTexture: inputTexture,
-                outputTexture: outputTexture,
+                texture: texture,
                 textureSet: &textureSet,
                 isOptimized: isOptimized
             )
@@ -88,12 +75,9 @@ final class ComputePipelineRegistry {
 
 // MARK: - Key
 extension ComputePipelineRegistry {
-    enum SinglePassKey {
+    enum PassKey {
         case grayscale
         case sobel
-    }
-
-    enum MultiPassKey {
         case multiPassSobel(isOptimized: Bool)
         case processing(isOptimized: Bool)
     }

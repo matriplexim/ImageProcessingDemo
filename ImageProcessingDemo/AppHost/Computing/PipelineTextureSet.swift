@@ -15,26 +15,28 @@ struct PipelineTextureSet {
         self.pool = texturePool
     }
 
-    func prepareTextures(withRequirements requirements: [PipelineTextureRequirement]) {
+    func prepareTextures(
+        withRequirements requirements: [PipelineTextureRequirement]
+    ) async {
         for req in requirements {
-            pool.prepareTextures(requirement: req)
+            await pool.prepareTextures(requirement: req)
         }
     }
 
-    mutating func getTexture(options: PipelineTextureOptions) -> MTLTexture {
-        let texture = pool.acquire(options: options)
+    mutating func getTexture(options: PipelineTextureOptions) async -> MTLTexture {
+        let texture = await pool.acquire(options: options)
         self.textures[options, default: []].append(texture)
 
         return texture
     }
 
-    func makeTexture(options: PipelineTextureOptions) -> MTLTexture {
-        pool.make(options: options)
+    func makeTexture(options: PipelineTextureOptions) async -> MTLTexture {
+        await pool.make(options: options)
     }
 
-    func reset() {
+    func reset() async {
         for texture in textures.values.flatMap(\.self) {
-            pool.release(texture)
+            await pool.release(texture)
         }
     }
 }

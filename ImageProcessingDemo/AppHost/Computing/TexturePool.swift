@@ -7,10 +7,9 @@
 
 import Metal
 
-final class TexturePool {
+final actor TexturePool {
     private let context: GPUContext
     private var storage: [TexturePool.Key: [MTLTexture]] = [:]
-    private var lock = os_unfair_lock_s()
 
     init(context: GPUContext) {
         self.context = context

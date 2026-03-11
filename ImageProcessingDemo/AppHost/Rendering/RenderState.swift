@@ -14,26 +14,24 @@ struct RenderState {
     let frameID: String
     /// Mode of rendering
     let mode: RenderState.Mode
-    /// Compute settings
-    let computeSettings: RenderState.ComputeSettings?
 
     init(
         texture: MTLTexture,
         frameID: String,
         mode: RenderState.Mode,
-        computeSettings: RenderState.ComputeSettings? = nil
     ) {
         self.texture = texture
         self.frameID = frameID
         self.mode = mode
-        self.computeSettings = computeSettings
     }
 }
 
 // MARK: - Mode
 extension RenderState {
     enum Mode {
-        case demo
+        case initialDemo
+        case processingDemo(ComputeSettings)
+        case processingBenchmark(ComputeSettings)
         case benchmark
     }
 }

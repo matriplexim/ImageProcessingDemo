@@ -17,6 +17,7 @@ final class Renderer {
     private let pipelineRegistry: ComputePipelineRegistry
 
     private var layer: CAMetalLayer?
+    private var processingContinuation: CheckedContinuation<MTLTexture, Never>?
 
     // MARK: Initialization
     init(context: GPUContext) throws {
@@ -62,6 +63,66 @@ final class Renderer {
 
         buffer.present(drawable)
         buffer.commit()
+    }
+
+    func makeProcessing(
+        texture: MTLTexture,
+        processingType: ProcessingType,
+        isOptimized: Bool,
+        completion: @escaping (MTLTexture?) -> Void
+    ) {
+        Task(priority: .high) {
+            var textureSet = PipelineTextureSet(texturePool: texturePool)
+            var outputTexture: MTLTexture?
+
+            let buffer = context.makeCommandBuffer(
+                label: "Compute Command Buffer",
+                completionHandler: { buf in
+                    let kernelEndTime = buf?.kernelEndTime ?? 0.0
+                    let kernelStartTime = buf?.kernelStartTime ?? 0.0
+                    print("### Kernel time: \(kernelEndTime - kernelStartTime)")
+                    let gpuEndTime = buf?.gpuEndTime ?? 0.0
+                    let gpuStartTime = buf?.gpuStartTime ?? 0.0
+                    print("### GPU time: \(gpuEndTime - gpuStartTime)")
+                    completion(outputTexture)
+                }
+            )
+            if let buffer {
+                // TODO: Problem with other LUT types: buffer range error
+                lutProvider.prepareLUTTextureIfNeeded(commandBuffer: buffer, type: .minimal)
+            }
+            guard let encoder = buffer?.makeComputeCommandEncoder() else {
+                completion(nil)
+                return
+            }
+
+            let pipelineKey: ComputePipelineRegistry.PassKey = switch processingType {
+            case .singleGrayscale:
+                .grayscale
+            case .singleSobel:
+                .sobel
+            case .multiPassSobel:
+                .multiPassSobel(isOptimized: isOptimized)
+            case .fullProcessing:
+                .processing(isOptimized: isOptimized)
+            }
+
+            outputTexture = await pipelineRegistry.encode(
+                encoder,
+                key: pipelineKey,
+                texture: texture,
+                textureSet: &textureSet
+            )
+
+            encoder.endEncoding()
+            buffer?.commit()
+        }
+    }
+
+    func prepareResources(texture: MTLTexture) {
+        Task(priority: .high) {
+            await pipelineRegistry.prepareByTexture(texture)
+        }
     }
 
     /// Make texture from `UIImage` to drawing

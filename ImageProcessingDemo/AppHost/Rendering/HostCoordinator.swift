@@ -11,8 +11,8 @@ final class HostCoordinator {
     // MARK: Private properties
     private let renderer: Renderer
 
-    private var link: CADisplayLink?
     private var renderState: RenderState?
+    private var hasRenderedFirstFrame = false
 
     // MARK: Initialization
     init(renderer: Renderer) {
@@ -24,28 +24,52 @@ final class HostCoordinator {
     /// - Parameter layer: Layer of Metal to draw by GPU
     func attachLayer(_ layer: CAMetalLayer) {
         renderer.bind(to: layer)
-        startRenderingLoop()
     }
 
     /// Update render state to draw new frame
     /// - Parameter state: Render state
     func updateRenderState(_ state: RenderState?) {
-        renderState = state
-    }
-}
-
-// MARK: - Private methods
-extension HostCoordinator {
-    private func startRenderingLoop() {
-        link = CADisplayLink(target: self, selector: #selector(renderLoop(_ :)))
-        link?.add(to: .main, forMode: .common)
-    }
-
-    @objc private func renderLoop(_ link: CADisplayLink) {
-        guard let texture = renderState?.texture else {
+        guard let state else {
             return
         }
 
+        // Check first frame rendering process
+        guard hasRenderedFirstFrame else {
+            renderState = state
+            return
+        }
+
+        renderState = state
+        switch state.mode {
+        case .initialDemo:
+            renderer.prepareResources(texture: state.texture)
+            renderer.draw(texture: state.texture)
+        case .processingDemo(let computeSettings):
+            renderer.makeProcessing(
+                texture: state.texture,
+                processingType: computeSettings.type,
+                isOptimized: computeSettings.isOptimized
+            ) { [weak self] texture in
+                guard let texture else {
+                    return
+                }
+
+                self?.renderer.draw(texture: texture)
+            }
+        case .processingBenchmark(let computeSettings):
+            break
+        case .benchmark:
+            break
+        }
+    }
+
+    func renderFirstFrameIfNeeded() {
+        guard !hasRenderedFirstFrame,
+              let texture = renderState?.texture else {
+            return
+        }
+
+        hasRenderedFirstFrame = true
         renderer.draw(texture: texture)
     }
 }

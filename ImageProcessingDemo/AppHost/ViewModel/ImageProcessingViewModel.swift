@@ -28,7 +28,11 @@ final class ImageProcessingViewModel: ObservableObject {
 
         self.renderState = RenderState(
             texture: texture,
-            frameID: "1"
+            frameID: UUID().uuidString,
+            mode: .processingDemo(RenderState.ComputeSettings(
+                type: .fullProcessing,
+                isOptimized: true
+            ))
         )
     }
 }
@@ -43,7 +47,8 @@ extension ImageProcessingViewModel {
 
             self?.renderState = RenderState(
                 texture: texture,
-                frameID: UUID().uuidString
+                frameID: UUID().uuidString,
+                mode: .initialDemo
             )
         }).store(in: &cancellables)
     }

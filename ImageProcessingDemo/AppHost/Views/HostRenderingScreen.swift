@@ -32,6 +32,10 @@ extension HostRenderingScreen: UIViewRepresentable {
 
     func makeUIView(context: Context) -> RenderingView {
         let view = RenderingView()
+        view.onReady = {
+            context.coordinator.renderFirstFrameIfNeeded()
+        }
+
         context.coordinator.attachLayer(view.metalLayer)
 
         return view

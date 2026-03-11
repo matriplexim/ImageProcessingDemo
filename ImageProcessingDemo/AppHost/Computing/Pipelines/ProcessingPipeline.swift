@@ -33,7 +33,7 @@ final class ProcessingPipeline {
     }
 
     // MARK: Internal properties
-    func prepareResources(inputTexture: MTLTexture) {
+    func prepareResources(inputTexture: MTLTexture) async {
         var requirements: [PipelineTextureRequirement] = []
 
         let oneChannelTextureOptions = PipelineTextureOptions(
@@ -46,6 +46,11 @@ final class ProcessingPipeline {
             height: inputTexture.height,
             pixelFormat: .rgba16Float
         )
+        let outputTextureOptions = PipelineTextureOptions(
+            width: inputTexture.width,
+            height: inputTexture.height,
+            pixelFormat: .bgra8Unorm
+        )
 
         requirements.append(PipelineTextureRequirement(
             options: oneChannelTextureOptions,
@@ -55,49 +60,59 @@ final class ProcessingPipeline {
             options: rgbaTextureOptions,
             count: 1
         ))
+        requirements.append(PipelineTextureRequirement(
+            options: outputTextureOptions,
+            count: 1
+        ))
 
-        texturePool.prepareTextures(requirements: requirements)
+        await texturePool.prepareTextures(requirements: requirements)
     }
 
     func encode(
         _ encoder: MTLComputeCommandEncoder,
-        inputTexture: MTLTexture,
-        outputTexture: MTLTexture,
+        texture: MTLTexture,
         textureSet: inout PipelineTextureSet,
         isOptimized: Bool
-    ) {
+    ) async -> MTLTexture {
         let oneChannelTexture: MTLTexture
         let secondOneChannelTexture: MTLTexture
         let thirdOneChannelTexture: MTLTexture
         let rgba16Texture: MTLTexture
+        let outputTexture: MTLTexture
 
         let options = PipelineTextureOptions(
-            width: inputTexture.width,
-            height: inputTexture.height,
+            width: texture.width,
+            height: texture.height,
             pixelFormat: .r16Float
         )
-
         let secondOptions = PipelineTextureOptions(
-            width: inputTexture.width,
-            height: inputTexture.height,
+            width: texture.width,
+            height: texture.height,
             pixelFormat: .rgba16Float
+        )
+        let outputTextureOptions = PipelineTextureOptions(
+            width: texture.width,
+            height: texture.height,
+            pixelFormat: .bgra8Unorm
         )
 
         if isOptimized {
-            oneChannelTexture = textureSet.getTexture(options: options)
-            secondOneChannelTexture = textureSet.getTexture(options: options)
-            thirdOneChannelTexture = textureSet.getTexture(options: options)
-            rgba16Texture = textureSet.getTexture(options: secondOptions)
+            oneChannelTexture = await textureSet.getTexture(options: options)
+            secondOneChannelTexture = await textureSet.getTexture(options: options)
+            thirdOneChannelTexture = await textureSet.getTexture(options: options)
+            rgba16Texture = await textureSet.getTexture(options: secondOptions)
+            outputTexture = await textureSet.getTexture(options: outputTextureOptions)
         } else {
-            oneChannelTexture = textureSet.makeTexture(options: options)
-            secondOneChannelTexture = textureSet.makeTexture(options: options)
-            thirdOneChannelTexture = textureSet.makeTexture(options: options)
-            rgba16Texture = textureSet.makeTexture(options: secondOptions)
+            oneChannelTexture = await textureSet.makeTexture(options: options)
+            secondOneChannelTexture = await textureSet.makeTexture(options: options)
+            thirdOneChannelTexture = await textureSet.makeTexture(options: options)
+            rgba16Texture = await textureSet.makeTexture(options: secondOptions)
+            outputTexture = await textureSet.makeTexture(options: outputTextureOptions)
         }
 
         grayscalePass.encode(
             encoder,
-            inputTexture: inputTexture,
+            inputTexture: texture,
             outputTexture: oneChannelTexture,
             subtype: .default
         )
@@ -156,5 +171,7 @@ final class ProcessingPipeline {
                 outputTexture: outputTexture
             )
         }
+
+        return outputTexture
     }
 }

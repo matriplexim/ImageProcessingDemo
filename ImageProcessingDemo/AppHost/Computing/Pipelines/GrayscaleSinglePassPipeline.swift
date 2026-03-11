@@ -16,14 +16,23 @@ final class GrayscaleSinglePassPipeline {
 
     func encode(
         _ encoder: MTLComputeCommandEncoder,
-        inputTexture: MTLTexture,
-        outputTexture: MTLTexture
-    ) {
+        texture: MTLTexture,
+        textureSet: inout PipelineTextureSet
+    ) async -> MTLTexture {
+        let outputTextureOptions = PipelineTextureOptions(
+            width: texture.width,
+            height: texture.height,
+            pixelFormat: .bgra8Unorm
+        )
+        let outputTexture = await textureSet.getTexture(options: outputTextureOptions)
+
         grayscalePass.encode(
-            encoder: encoder,
-            inputTexture: inputTexture,
+            encoder,
+            inputTexture: texture,
             outputTexture: outputTexture,
             subtype: .single
         )
+
+        return outputTexture
     }
 }

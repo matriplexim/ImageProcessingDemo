@@ -18,13 +18,17 @@ final class AppContainer {
             return nil
         }
 
-        self.renderer = Renderer(
-            context: GPUContext(
-                device: device,
-                commandQueue: commandQueue,
-                library: library
-            )
+        let context = GPUContext(
+            device: device,
+            commandQueue: commandQueue,
+            library: library,
+            pixelFormat: .bgra8Unorm
         )
+        guard let renderer = try? Renderer(context: context) else {
+            return nil
+        }
+
+        self.renderer = renderer
     }
 
     func start() -> some View {

@@ -25,10 +25,6 @@ final class HeatmapComputePass {
         outputTexture: MTLTexture,
         lutTexture: MTLTexture
     ) {
-        guard let lutTexture else {
-            return
-        }
-
         encoder.label = type.encoderLabel
         encoder.setComputePipelineState(pipeline)
 

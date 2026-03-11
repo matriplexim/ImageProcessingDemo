@@ -18,44 +18,63 @@ final class SobelMultiPassPipeline {
         self.texturePool = texturePool
     }
 
-    func prepareResources(inputTexture: MTLTexture) {
+    func prepareResources(inputTexture: MTLTexture) async {
         var requirements: [PipelineTextureRequirement] = []
+
         let grayscaleTextureOptions = PipelineTextureOptions(
             width: inputTexture.width,
             height: inputTexture.height,
             pixelFormat: .r16Float
         )
+        let outputTextureOptions = PipelineTextureOptions(
+            width: inputTexture.width,
+            height: inputTexture.height,
+            pixelFormat: .bgra8Unorm
+        )
+
         requirements.append(PipelineTextureRequirement(
             options: grayscaleTextureOptions,
             count: 1
         ))
+        requirements.append(PipelineTextureRequirement(
+            options: outputTextureOptions,
+            count: 1
+        ))
 
-        texturePool.prepareTextures(requirements: requirements)
+        await texturePool.prepareTextures(requirements: requirements)
     }
 
     func encode(
         _ encoder: MTLComputeCommandEncoder,
-        inputTexture: MTLTexture,
-        outputTexture: MTLTexture,
+        texture: MTLTexture,
         textureSet: inout PipelineTextureSet,
         isOptimized: Bool
-    ) {
+    ) async -> MTLTexture {
         let grayscaleTexture: MTLTexture
-        let options = PipelineTextureOptions(
-            width: inputTexture.width,
-            height: inputTexture.height,
+        let grayscaleTextureOptions = PipelineTextureOptions(
+            width: texture.width,
+            height: texture.height,
             pixelFormat: .r16Float
         )
 
+        let outputTexture: MTLTexture
+        let outputTextureOptions = PipelineTextureOptions(
+            width: texture.width,
+            height: texture.height,
+            pixelFormat: .bgra8Unorm
+        )
+
         if isOptimized {
-            grayscaleTexture = textureSet.getTexture(options: options)
+            grayscaleTexture = await textureSet.getTexture(options: grayscaleTextureOptions)
+            outputTexture = await textureSet.getTexture(options: outputTextureOptions)
         } else {
-            grayscaleTexture = textureSet.makeTexture(options: options)
+            grayscaleTexture = await textureSet.makeTexture(options: grayscaleTextureOptions)
+            outputTexture = await textureSet.makeTexture(options: outputTextureOptions)
         }
 
         grayscalePass.encode(
             encoder,
-            inputTexture: inputTexture,
+            inputTexture: texture,
             outputTexture: grayscaleTexture,
             subtype: .default
         )
@@ -66,5 +85,7 @@ final class SobelMultiPassPipeline {
             outputTexture: outputTexture,
             subtype: isOptimized ? .optimized : .naive
         )
+
+        return outputTexture
     }
 }

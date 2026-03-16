@@ -12,8 +12,6 @@ final class RenderingView: UIView {
     /// Layer of Metal to draw by GPU
     let metalLayer: CAMetalLayer
 
-    var onReady: (() -> Void)?
-
     // MARK: Initialization
     init() {
         self.metalLayer = CAMetalLayer()
@@ -29,7 +27,6 @@ final class RenderingView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         layoutMetalLayer()
-        onReady?()
     }
 }
 

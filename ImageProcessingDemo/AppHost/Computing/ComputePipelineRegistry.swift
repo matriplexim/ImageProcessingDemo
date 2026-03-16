@@ -8,16 +8,23 @@
 import Metal
 
 final class ComputePipelineRegistry {
+    // MARK: Private properties
+    private let context: GPUContext
+    private let texturePool: TexturePool
+
     private let singleGrayscalePipeline: GrayscaleSinglePassPipeline
     private let singleSobelPipeline: SobelSinglePassPipeline
     private let multiPassSobelPipeline: SobelMultiPassPipeline
     private let processingPipeline: ProcessingPipeline
 
+    // MARK: Initialization
     init(
         context: GPUContext,
         texturePool: TexturePool,
         lutProvider: LUTProvider
     ) throws {
+        self.context = context
+        self.texturePool = texturePool
         singleGrayscalePipeline = try GrayscaleSinglePassPipeline(context: context)
         singleSobelPipeline = try SobelSinglePassPipeline(context: context)
         multiPassSobelPipeline = try SobelMultiPassPipeline(
@@ -31,44 +38,132 @@ final class ComputePipelineRegistry {
         )
     }
 
-    func prepareByTexture(_ texture: MTLTexture) async {
-        await multiPassSobelPipeline.prepareResources(inputTexture: texture)
-        await processingPipeline.prepareResources(inputTexture: texture)
+    // MARK: Internal methods
+    func prewarm(_ texture: MTLTexture) async {
+        let grayscaleRequirements = singleGrayscalePipeline.makeTextureRequirements(
+            width: texture.width,
+            height: texture.height
+        )
+        let singleSobelRequirements = singleSobelPipeline.makeTextureRequirements(
+            width: texture.width,
+            height: texture.height
+        )
+        let multiPassRequirements = multiPassSobelPipeline.makeTextureRequirements(
+            width: texture.width,
+            height: texture.height
+        )
+        let processingRequirements = processingPipeline.makeTextureRequirements(
+            width: texture.width,
+            height: texture.height
+        )
+
+        await texturePool.prewarm(
+            requirements: [
+                grayscaleRequirements,
+                singleSobelRequirements,
+                multiPassRequirements,
+                processingRequirements
+            ].flatMap(\.self)
+        )
+    }
+
+    func prepareTextureSet(
+        forTexture texture: MTLTexture,
+        processingType: ProcessingType
+    ) async -> PipelineTextureSet {
+        let textureSet = PipelineTextureSet(
+            context: context,
+            texturePool: texturePool
+        )
+
+        let requirements: [PipelineTextureRequirement]
+        switch processingType {
+        case .fullProcessing:
+            requirements = processingPipeline.makeTextureRequirements(
+                width: texture.width,
+                height: texture.height
+            )
+        case .multiPassSobel:
+            requirements = multiPassSobelPipeline.makeTextureRequirements(
+                width: texture.width,
+                height: texture.height
+            )
+        case .singleGrayscale:
+            requirements = singleGrayscalePipeline.makeTextureRequirements(
+                width: texture.width,
+                height: texture.height
+            )
+        case .singleSobel:
+            requirements = singleSobelPipeline.makeTextureRequirements(
+                width: texture.width,
+                height: texture.height
+            )
+        }
+
+        await textureSet.prewarm(requirements: requirements)
+        return textureSet
     }
 
     func encode(
-        _ encoder: MTLComputeCommandEncoder,
-        key: ComputePipelineRegistry.PassKey,
+        commandBuffer: MTLCommandBuffer,
         texture: MTLTexture,
-        textureSet: inout PipelineTextureSet
-    ) async -> MTLTexture {
-        switch key {
+        processingType: ProcessingType,
+        isOptimized: Bool
+    ) throws -> MTLTexture {
+        let textureSet = PipelineTextureSet(
+            context: context,
+            texturePool: texturePool
+        )
+
+        let outputTexture: MTLTexture
+        switch makePassKey(by: processingType, isOptimized: isOptimized) {
         case .grayscale:
-            await singleGrayscalePipeline.encode(
-                encoder,
+            outputTexture = try singleGrayscalePipeline.encode(
+                commandBuffer: commandBuffer,
                 texture: texture,
-                textureSet: &textureSet
+                textureSet: textureSet
             )
         case .sobel:
-            await singleSobelPipeline.encode(
-                encoder,
+            outputTexture = try singleSobelPipeline.encode(
+                commandBuffer: commandBuffer,
                 texture: texture,
-                textureSet: &textureSet
+                textureSet: textureSet
             )
         case .multiPassSobel(let isOptimized):
-            await multiPassSobelPipeline.encode(
-                encoder,
+            outputTexture = try multiPassSobelPipeline.encode(
+                commandBuffer: commandBuffer,
                 texture: texture,
-                textureSet: &textureSet,
+                textureSet: textureSet,
                 isOptimized: isOptimized
             )
         case .processing(let isOptimized):
-            await processingPipeline.encode(
-                encoder,
+            outputTexture = try processingPipeline.encode(
+                commandBuffer: commandBuffer,
                 texture: texture,
-                textureSet: &textureSet,
+                textureSet: textureSet,
                 isOptimized: isOptimized
             )
+        }
+
+        return outputTexture
+    }
+}
+
+// MARK: - Private methods
+extension ComputePipelineRegistry {
+    private func makePassKey(
+        by processingType: ProcessingType,
+        isOptimized: Bool
+    ) -> ComputePipelineRegistry.PassKey {
+        switch processingType {
+        case .singleGrayscale:
+            return .grayscale
+        case .singleSobel:
+            return .sobel
+        case .multiPassSobel:
+            return .multiPassSobel(isOptimized: isOptimized)
+        case .fullProcessing:
+            return .processing(isOptimized: isOptimized)
         }
     }
 }

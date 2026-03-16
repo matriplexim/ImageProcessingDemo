@@ -7,36 +7,58 @@
 
 import Metal
 
-struct PipelineTextureSet {
+final class PipelineTextureSet {
+    // MARK: Private properties
+    private let context: GPUContext
     private let pool: TexturePool
     private var textures: [PipelineTextureOptions: [MTLTexture]] = [:]
 
-    init(texturePool: TexturePool) {
+    // MARK: Initialization
+    init(
+        context: GPUContext,
+        texturePool: TexturePool
+    ) {
+        self.context = context
         self.pool = texturePool
     }
 
-    func prepareTextures(
-        withRequirements requirements: [PipelineTextureRequirement]
-    ) async {
+    // MARK: Internal properties
+    func prewarm(requirements: [PipelineTextureRequirement]) async {
         for req in requirements {
-            await pool.prepareTextures(requirement: req)
+            for _ in 0..<req.count {
+                let texture = await pool.obtain(by: req.options)
+                textures[req.options, default: []].append(texture)
+            }
         }
     }
 
-    mutating func getTexture(options: PipelineTextureOptions) async -> MTLTexture {
-        let texture = await pool.acquire(options: options)
-        self.textures[options, default: []].append(texture)
-
-        return texture
+    func getTexture(options: PipelineTextureOptions) -> MTLTexture {
+        if var existedTextures = textures[options],
+           !existedTextures.isEmpty,
+           let existedTexture = existedTextures.popLast() {
+            return existedTexture
+        } else {
+            return context.makeTexture(
+                width: options.width,
+                height: options.height,
+                pixelFormat: options.pixelFormat
+            )!
+        }
     }
 
-    func makeTexture(options: PipelineTextureOptions) async -> MTLTexture {
-        await pool.make(options: options)
-    }
+    func releaseAll() {
+        Task(priority: .medium) {
+            await withTaskGroup(of: Void.self) { taskGroup in
+                for texture in textures.values.joined() {
+                    taskGroup.addTask {
+                        await self.pool.release(texture)
+                    }
+                }
 
-    func reset() async {
-        for texture in textures.values.flatMap(\.self) {
-            await pool.release(texture)
+                await taskGroup.waitForAll()
+
+                textures.removeAll()
+            }
         }
     }
 }

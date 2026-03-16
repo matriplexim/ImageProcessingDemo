@@ -8,84 +8,107 @@
 import Metal
 
 final class SobelMultiPassPipeline {
+    // MARK: Private properties
+    private let context: GPUContext
+    private let texturePool: TexturePool
     private let grayscalePass: GrayscaleComputePass
     private let sobelPass: SobelComputePass
-    private let texturePool: TexturePool
 
+    // MARK: Initialization
     init(context: GPUContext, texturePool: TexturePool) throws {
+        self.context = context
+        self.texturePool = texturePool
         self.grayscalePass = try GrayscaleComputePass(context: context)
         self.sobelPass = try SobelComputePass(context: context)
-        self.texturePool = texturePool
     }
 
-    func prepareResources(inputTexture: MTLTexture) async {
-        var requirements: [PipelineTextureRequirement] = []
-
-        let grayscaleTextureOptions = PipelineTextureOptions(
-            width: inputTexture.width,
-            height: inputTexture.height,
-            pixelFormat: .r16Float
-        )
-        let outputTextureOptions = PipelineTextureOptions(
-            width: inputTexture.width,
-            height: inputTexture.height,
-            pixelFormat: .bgra8Unorm
-        )
-
-        requirements.append(PipelineTextureRequirement(
-            options: grayscaleTextureOptions,
-            count: 1
-        ))
-        requirements.append(PipelineTextureRequirement(
-            options: outputTextureOptions,
-            count: 1
-        ))
-
-        await texturePool.prepareTextures(requirements: requirements)
+    // MARK: Internal methods
+    func makeTextureRequirements(width: Int, height: Int) -> [PipelineTextureRequirement] {
+        [
+            PipelineTextureRequirement(
+                options: makeOneChannelOptions(
+                    width: width,
+                    height: height
+                ),
+                count: 1
+            ),
+            PipelineTextureRequirement(
+                options: makeOutputTextureOptions(
+                    width: width,
+                    height: height
+                ),
+                count: 1
+            )
+        ]
     }
 
     func encode(
-        _ encoder: MTLComputeCommandEncoder,
+        commandBuffer: MTLCommandBuffer,
         texture: MTLTexture,
-        textureSet: inout PipelineTextureSet,
+        textureSet: PipelineTextureSet,
         isOptimized: Bool
-    ) async -> MTLTexture {
-        let grayscaleTexture: MTLTexture
-        let grayscaleTextureOptions = PipelineTextureOptions(
-            width: texture.width,
-            height: texture.height,
-            pixelFormat: .r16Float
+    ) throws -> MTLTexture {
+        let oneChannelTexture = textureSet.getTexture(
+            options: makeOneChannelOptions(
+                width: texture.width,
+                height: texture.height
+            )
         )
 
-        let outputTexture: MTLTexture
-        let outputTextureOptions = PipelineTextureOptions(
-            width: texture.width,
-            height: texture.height,
-            pixelFormat: .bgra8Unorm
+        let outputTexture = textureSet.getTexture(
+            options: makeOutputTextureOptions(
+                width: texture.width,
+                height: texture.height
+            )
         )
 
-        if isOptimized {
-            grayscaleTexture = await textureSet.getTexture(options: grayscaleTextureOptions)
-            outputTexture = await textureSet.getTexture(options: outputTextureOptions)
-        } else {
-            grayscaleTexture = await textureSet.makeTexture(options: grayscaleTextureOptions)
-            outputTexture = await textureSet.makeTexture(options: outputTextureOptions)
-        }
-
+        let grayscaleEncoder = try context.makeComputeEncoder(
+            commandBuffer: commandBuffer
+        )
         grayscalePass.encode(
-            encoder,
+            grayscaleEncoder,
             inputTexture: texture,
-            outputTexture: grayscaleTexture,
+            outputTexture: oneChannelTexture,
             subtype: .default
         )
+        grayscaleEncoder.endEncoding()
 
+        let sobelEncoder = try context.makeComputeEncoder(
+            commandBuffer: commandBuffer
+        )
         sobelPass.encode(
-            encoder,
-            inputTexture: grayscaleTexture,
+            sobelEncoder,
+            inputTexture: oneChannelTexture,
             outputTexture: outputTexture,
             subtype: isOptimized ? .optimized : .naive
         )
+        sobelEncoder.endEncoding()
 
         return outputTexture
+    }
+}
+
+// MARK: - Private properties
+extension SobelMultiPassPipeline {
+    private func makeOneChannelOptions(
+        width: Int,
+        height: Int
+    ) -> PipelineTextureOptions {
+        PipelineTextureOptions(
+            width: width,
+            height: height,
+            pixelFormat: .r16Float
+        )
+    }
+
+    private func makeOutputTextureOptions(
+        width: Int,
+        height: Int
+    ) -> PipelineTextureOptions {
+        PipelineTextureOptions(
+            width: width,
+            height: height,
+            pixelFormat: context.pixelFormat
+        )
     }
 }

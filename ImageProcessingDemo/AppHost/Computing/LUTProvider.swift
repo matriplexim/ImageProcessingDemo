@@ -56,11 +56,11 @@ final class LUTProvider {
     }
 
     func getLUTTexture() throws -> MTLTexture {
-        guard case .notReady = state else {
+        if case .notReady = state {
+            throw LUTProvider.Error.textureIsNotReady
+        } else {
             return texture
         }
-
-        throw LUTProvider.Error.textureIsNotReady
     }
 }
 

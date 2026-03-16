@@ -6,7 +6,7 @@
 //
 
 enum ImageProcessingFeatureBuilder {
-    static func build(renderer: Renderer) -> ImageProcessingScreen {
+    @MainActor static func build(renderer: Renderer) -> ImageProcessingScreen {
         let hostCoordinator = HostCoordinator(renderer: renderer)
         let viewModel = ImageProcessingViewModel(renderer: renderer)
         let screen = ImageProcessingScreen(

@@ -7,4 +7,6 @@
 
 enum ProcessingError: Error {
     case pipelineCreateFailed
+    case emptyEncoder
+    case emptyBuffer
 }

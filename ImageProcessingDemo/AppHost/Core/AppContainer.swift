@@ -31,7 +31,7 @@ final class AppContainer {
         self.renderer = renderer
     }
 
-    func start() -> some View {
+    @MainActor func start() -> some View {
         ImageProcessingFeatureBuilder.build(renderer: renderer)
     }
 }

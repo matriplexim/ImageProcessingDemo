@@ -8,16 +8,17 @@
 import Metal
 import UIKit
 
-final class Renderer {
+final actor Renderer {
     // MARK: Private properties
-    private let context: GPUContext
+    private nonisolated let context: GPUContext
     private let texturePool: TexturePool
     private let lutProvider: LUTProvider
-    private let renderPipeline: RenderPipeline
+    private nonisolated let renderPipeline: RenderPipeline
     private let pipelineRegistry: ComputePipelineRegistry
 
+    @MainActor
     private var layer: CAMetalLayer?
-    private var processingContinuation: CheckedContinuation<MTLTexture, Never>?
+    private var currentTextureOptions: Renderer.TextureOptions?
 
     // MARK: Initialization
     init(context: GPUContext) throws {
@@ -38,20 +39,31 @@ final class Renderer {
     // MARK: Internal methods
     /// Binding Metal layer to renderer device and set up render settings
     /// - Parameter layer: Metal layer
-    func bind(to layer: CAMetalLayer) {
+    @MainActor func bind(to layer: CAMetalLayer) {
         self.layer = layer
         layer.device = context.device
-        layer.framebufferOnly = false
-        layer.pixelFormat = .bgra8Unorm
+        layer.framebufferOnly = true
+        layer.pixelFormat = context.pixelFormat
+    }
+
+    func prewarm(texture: MTLTexture) async {
+        let textureOptions = Renderer.TextureOptions(
+            width: texture.width,
+            height: texture.height
+        )
+        guard currentTextureOptions != textureOptions else {
+            return
+        }
+
+        currentTextureOptions = textureOptions
+        await pipelineRegistry.prewarm(texture)
     }
 
     /// Draw texture by Metal
     /// - Parameter texture: Texture to drawing
-    func draw(texture: MTLTexture) {
+    @MainActor func draw(texture: MTLTexture) {
         guard let drawable = layer?.nextDrawable(),
-              let buffer = context.makeCommandBuffer(
-                label: "Render Command Buffer"
-              ) else {
+              let buffer = try? context.makeCommandBuffer(label: "Render Buffer") else {
             return
         }
 
@@ -68,67 +80,48 @@ final class Renderer {
     func makeProcessing(
         texture: MTLTexture,
         processingType: ProcessingType,
-        isOptimized: Bool,
-        completion: @escaping (MTLTexture?) -> Void
-    ) {
-        Task(priority: .high) {
-            var textureSet = PipelineTextureSet(texturePool: texturePool)
-            var outputTexture: MTLTexture?
+        isOptimized: Bool
+    ) async throws -> MTLTexture {
+        let buffer = try context.makeCommandBuffer(label: "Compute Buffer")
 
-            let buffer = context.makeCommandBuffer(
-                label: "Compute Command Buffer",
-                completionHandler: { buf in
-                    let kernelEndTime = buf?.kernelEndTime ?? 0.0
-                    let kernelStartTime = buf?.kernelStartTime ?? 0.0
-                    print("### Kernel time: \(kernelEndTime - kernelStartTime)")
-                    let gpuEndTime = buf?.gpuEndTime ?? 0.0
-                    let gpuStartTime = buf?.gpuStartTime ?? 0.0
-                    print("### GPU time: \(gpuEndTime - gpuStartTime)")
-                    completion(outputTexture)
-                }
-            )
-            if let buffer {
-                // TODO: Problem with other LUT types: buffer range error
-                lutProvider.prepareLUTTextureIfNeeded(commandBuffer: buffer, type: .minimal)
-            }
-            guard let encoder = buffer?.makeComputeCommandEncoder() else {
-                completion(nil)
-                return
+        lutProvider.prepareLUTTextureIfNeeded(commandBuffer: buffer, type: .minimal)
+
+        let textureSet = await pipelineRegistry.prepareTextureSet(
+            forTexture: texture,
+            processingType: processingType
+        )
+        let resultTexture = try pipelineRegistry.encode(
+            commandBuffer: buffer,
+            texture: texture,
+            processingType: processingType,
+            isOptimized: isOptimized
+        )
+
+        // It's solution for certain processing with sync
+        await withCheckedContinuation { continuation in
+            buffer.addCompletedHandler { completedBuffer in
+                continuation.resume()
             }
 
-            let pipelineKey: ComputePipelineRegistry.PassKey = switch processingType {
-            case .singleGrayscale:
-                .grayscale
-            case .singleSobel:
-                .sobel
-            case .multiPassSobel:
-                .multiPassSobel(isOptimized: isOptimized)
-            case .fullProcessing:
-                .processing(isOptimized: isOptimized)
-            }
-
-            outputTexture = await pipelineRegistry.encode(
-                encoder,
-                key: pipelineKey,
-                texture: texture,
-                textureSet: &textureSet
-            )
-
-            encoder.endEncoding()
-            buffer?.commit()
+            buffer.commit()
         }
-    }
 
-    func prepareResources(texture: MTLTexture) {
-        Task(priority: .high) {
-            await pipelineRegistry.prepareByTexture(texture)
-        }
+        textureSet.releaseAll()
+        return resultTexture
     }
 
     /// Make texture from `UIImage` to drawing
     /// - Parameter image: Image to drawing
     /// - Returns: Texture to render pipeline
-    func makeTexture(image: UIImage) -> MTLTexture? {
+    nonisolated func makeTexture(image: UIImage) -> MTLTexture? {
         image.toMTLTexture(device: context.device)
+    }
+}
+
+// MARK: - TextureOptions
+extension Renderer {
+    struct TextureOptions: Hashable {
+        let width: Int
+        let height: Int
     }
 }

@@ -31,21 +31,23 @@ final class GPUContext {
     /// Make command buffer with label
     /// - Parameter label: Label of command buffer
     /// - Returns: Command buffer
-    func makeCommandBuffer(
-        label: String,
-        completionHandler: ((MTLCommandBuffer?) -> Void)? = nil
-    ) -> MTLCommandBuffer? {
+    func makeCommandBuffer(label: String) throws -> MTLCommandBuffer {
         guard let buf = commandQueue.makeCommandBuffer() else {
-            completionHandler?(nil)
-            return nil
+            throw ProcessingError.emptyBuffer
         }
 
         buf.label = label
-        buf.addCompletedHandler({ commandBuffer in
-            completionHandler?(commandBuffer)
-        })
-
         return buf
+    }
+
+    func makeComputeEncoder(
+        commandBuffer: MTLCommandBuffer
+    ) throws -> MTLComputeCommandEncoder {
+        guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            throw ProcessingError.emptyEncoder
+        }
+
+        return encoder
     }
 
     /// Make compute pipeline state by function name

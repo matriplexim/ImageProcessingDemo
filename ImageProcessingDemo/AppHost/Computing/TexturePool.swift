@@ -8,43 +8,23 @@
 import Metal
 
 final actor TexturePool {
+    // MARK: Private properties
     private let context: GPUContext
     private var storage: [TexturePool.Key: [MTLTexture]] = [:]
 
+    // MARK: Initialization
     init(context: GPUContext) {
         self.context = context
     }
 
-    func prepareTextures(requirements: [PipelineTextureRequirement]) {
+    // MARK: Internal methods
+    func prewarm(requirements: [PipelineTextureRequirement]) {
         for req in requirements {
-            prepareTextures(requirement: req)
+            prewarm(requirement: req)
         }
     }
 
-    func prepareTextures(requirement: PipelineTextureRequirement) {
-        let key = TexturePool.Key(
-            width: requirement.options.width,
-            height: requirement.options.height,
-            pixelFormat: requirement.options.pixelFormat
-        )
-
-        let existingCount = storage[key]?.count ?? 0
-        let diff = max(0, requirement.count - existingCount)
-
-        for _ in 0..<diff {
-            guard let texture = context.makeTexture(
-                width: requirement.options.width,
-                height: requirement.options.height,
-                pixelFormat: requirement.options.pixelFormat
-            ) else {
-                continue
-            }
-
-            storage[key, default: []].append(texture)
-        }
-    }
-
-    func acquire(options: PipelineTextureOptions) -> MTLTexture {
+    func obtain(by options: PipelineTextureOptions) -> MTLTexture {
         let key = TexturePool.Key(
             width: options.width,
             height: options.height,
@@ -57,18 +37,8 @@ final actor TexturePool {
 
             return texture
         } else {
-            return make(options: options)
+            return makeTexture(options: options)!
         }
-    }
-
-    func make(options: PipelineTextureOptions) -> MTLTexture {
-        let texture = context.makeTexture(
-            width: options.width,
-            height: options.height,
-            pixelFormat: options.pixelFormat
-        )!
-
-        return texture
     }
 
     func release(_ texture: MTLTexture) {
@@ -79,6 +49,34 @@ final actor TexturePool {
         )
 
         storage[key, default: []].append(texture)
+    }
+}
+
+// MARK: - Private methods
+extension TexturePool {
+    private func makeTexture(options: PipelineTextureOptions) -> MTLTexture? {
+        context.makeTexture(
+            width: options.width,
+            height: options.height,
+            pixelFormat: options.pixelFormat
+        )
+    }
+
+    private func prewarm(requirement: PipelineTextureRequirement) {
+        let key = TexturePool.Key(
+            width: requirement.options.width,
+            height: requirement.options.height,
+            pixelFormat: requirement.options.pixelFormat
+        )
+
+        let existingCount = storage[key]?.count ?? 0
+        let needed = max(0, requirement.count - existingCount)
+
+        for _ in 0..<needed {
+            if let texture = makeTexture(options: requirement.options) {
+                storage[key, default: []].append(texture)
+            }
+        }
     }
 }
 

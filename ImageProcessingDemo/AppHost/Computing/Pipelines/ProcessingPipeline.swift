@@ -9,13 +9,15 @@ import Metal
 
 final class ProcessingPipeline {
     // MARK: Private properties
+    private let context: GPUContext
+    private let texturePool: TexturePool
+    private let lutProvider: LUTProvider
+
     private let grayscalePass: GrayscaleComputePass
     private let gaussPass: GaussComputePass
     private let sobelPass: SobelComputePass
     private let heatmapPass: HeatmapComputePass
     private let tonemapPass: TonemapComputePass
-    private let texturePool: TexturePool
-    private let lutProvider: LUTProvider
 
     // MARK: Initialization
     init(
@@ -23,155 +25,193 @@ final class ProcessingPipeline {
         texturePool: TexturePool,
         lutProvider: LUTProvider
     ) throws {
+        self.context = context
+        self.texturePool = texturePool
+        self.lutProvider = lutProvider
         self.grayscalePass = try GrayscaleComputePass(context: context)
         self.gaussPass = try GaussComputePass(context: context)
         self.sobelPass = try SobelComputePass(context: context)
         self.heatmapPass = try HeatmapComputePass(context: context)
         self.tonemapPass = try TonemapComputePass(context: context)
-        self.texturePool = texturePool
-        self.lutProvider = lutProvider
     }
 
     // MARK: Internal properties
-    func prepareResources(inputTexture: MTLTexture) async {
-        var requirements: [PipelineTextureRequirement] = []
-
-        let oneChannelTextureOptions = PipelineTextureOptions(
-            width: inputTexture.width,
-            height: inputTexture.height,
-            pixelFormat: .r16Float
-        )
-        let rgbaTextureOptions = PipelineTextureOptions(
-            width: inputTexture.width,
-            height: inputTexture.height,
-            pixelFormat: .rgba16Float
-        )
-        let outputTextureOptions = PipelineTextureOptions(
-            width: inputTexture.width,
-            height: inputTexture.height,
-            pixelFormat: .bgra8Unorm
-        )
-
-        requirements.append(PipelineTextureRequirement(
-            options: oneChannelTextureOptions,
-            count: 3
-        ))
-        requirements.append(PipelineTextureRequirement(
-            options: rgbaTextureOptions,
-            count: 1
-        ))
-        requirements.append(PipelineTextureRequirement(
-            options: outputTextureOptions,
-            count: 1
-        ))
-
-        await texturePool.prepareTextures(requirements: requirements)
+    func makeTextureRequirements(width: Int, height: Int) -> [PipelineTextureRequirement] {
+        [
+            PipelineTextureRequirement(
+                options: makeOneChannelTextureOptions(
+                    width: width,
+                    height: height
+                ),
+                count: 3
+            ),
+            PipelineTextureRequirement(
+                options: make16FloatTextureOptions(
+                    width: width,
+                    height: height
+                ),
+                count: 1
+            ),
+            PipelineTextureRequirement(
+                options: makeOutputTextureOptions(
+                    width: width,
+                    height: height
+                ),
+                count: 1
+            )
+        ]
     }
 
     func encode(
-        _ encoder: MTLComputeCommandEncoder,
+        commandBuffer: MTLCommandBuffer,
         texture: MTLTexture,
-        textureSet: inout PipelineTextureSet,
+        textureSet: PipelineTextureSet,
         isOptimized: Bool
-    ) async -> MTLTexture {
-        let oneChannelTexture: MTLTexture
-        let secondOneChannelTexture: MTLTexture
-        let thirdOneChannelTexture: MTLTexture
-        let rgba16Texture: MTLTexture
-        let outputTexture: MTLTexture
-
-        let options = PipelineTextureOptions(
+    ) throws -> MTLTexture {
+        let oneChannelTextureOptions = makeOneChannelTextureOptions(
             width: texture.width,
-            height: texture.height,
-            pixelFormat: .r16Float
-        )
-        let secondOptions = PipelineTextureOptions(
-            width: texture.width,
-            height: texture.height,
-            pixelFormat: .rgba16Float
-        )
-        let outputTextureOptions = PipelineTextureOptions(
-            width: texture.width,
-            height: texture.height,
-            pixelFormat: .bgra8Unorm
+            height: texture.height
         )
 
-        if isOptimized {
-            oneChannelTexture = await textureSet.getTexture(options: options)
-            secondOneChannelTexture = await textureSet.getTexture(options: options)
-            thirdOneChannelTexture = await textureSet.getTexture(options: options)
-            rgba16Texture = await textureSet.getTexture(options: secondOptions)
-            outputTexture = await textureSet.getTexture(options: outputTextureOptions)
-        } else {
-            oneChannelTexture = await textureSet.makeTexture(options: options)
-            secondOneChannelTexture = await textureSet.makeTexture(options: options)
-            thirdOneChannelTexture = await textureSet.makeTexture(options: options)
-            rgba16Texture = await textureSet.makeTexture(options: secondOptions)
-            outputTexture = await textureSet.makeTexture(options: outputTextureOptions)
-        }
+        let outputTexture = textureSet.getTexture(options: makeOutputTextureOptions(
+            width: texture.width,
+            height: texture.height
+        ))
 
+        // Grayscale
+        let oneChannelTexture = textureSet.getTexture(
+            options: oneChannelTextureOptions
+        )
+        let grayscaleEncoder = try context.makeComputeEncoder(
+            commandBuffer: commandBuffer
+        )
         grayscalePass.encode(
-            encoder,
+            grayscaleEncoder,
             inputTexture: texture,
             outputTexture: oneChannelTexture,
             subtype: .default
         )
+        grayscaleEncoder.endEncoding()
 
+        // Gauss
+        let gaussResultTexture = textureSet.getTexture(
+            options: oneChannelTextureOptions
+        )
         if isOptimized {
+            let gaussTempTexture = textureSet.getTexture(
+                options: oneChannelTextureOptions
+            )
+            let gaussTempEncoder = try context.makeComputeEncoder(
+                commandBuffer: commandBuffer
+            )
             gaussPass.encode(
-                encoder,
+                gaussTempEncoder,
                 inputTexture: oneChannelTexture,
-                outputTexture: secondOneChannelTexture,
+                outputTexture: gaussTempTexture,
                 subtype: .optimizedVertical
             )
+            gaussTempEncoder.endEncoding()
 
+            let gaussEncoder = try context.makeComputeEncoder(
+                commandBuffer: commandBuffer
+            )
             gaussPass.encode(
-                encoder,
-                inputTexture: secondOneChannelTexture,
-                outputTexture: thirdOneChannelTexture,
+                gaussEncoder,
+                inputTexture: gaussTempTexture,
+                outputTexture: gaussResultTexture,
                 subtype: .optimizedHorizontal
             )
+            gaussEncoder.endEncoding()
         } else {
+            let gaussEncoder = try context.makeComputeEncoder(
+                commandBuffer: commandBuffer
+            )
             gaussPass.encode(
-                encoder,
+                gaussEncoder,
                 inputTexture: oneChannelTexture,
-                outputTexture: thirdOneChannelTexture,
+                outputTexture: gaussResultTexture,
                 subtype: .naive
             )
+            gaussEncoder.endEncoding()
         }
 
+        // Sobel
+        let sobelEncoder = try context.makeComputeEncoder(
+            commandBuffer: commandBuffer
+        )
         sobelPass.encode(
-            encoder,
-            inputTexture: thirdOneChannelTexture,
+            sobelEncoder,
+            inputTexture: gaussResultTexture,
             outputTexture: oneChannelTexture,
             subtype: isOptimized ? .optimized : .naive
         )
+        sobelEncoder.endEncoding()
 
-        // If LUT texture doesn't ready we can handle error
-        // and write one channel data to tonemap kernel.
-        // It's provide opportunity to fast debug - if you see only
-        // one channel result = LUT texture is not available
-        do {
-            heatmapPass.encode(
-                encoder,
-                inputTexture: oneChannelTexture,
-                outputTexture: rgba16Texture,
-                lutTexture: try lutProvider.getLUTTexture()
+        // Heatmap
+        let heatmapTexture = textureSet.getTexture(
+            options: make16FloatTextureOptions(
+                width: texture.width,
+                height: texture.height
             )
+        )
+        let heatmapEncoder = try context.makeComputeEncoder(
+            commandBuffer: commandBuffer
+        )
+        heatmapPass.encode(
+            heatmapEncoder,
+            inputTexture: oneChannelTexture,
+            outputTexture: heatmapTexture,
+            lutTexture: try lutProvider.getLUTTexture()
+        )
+        heatmapEncoder.endEncoding()
 
-            tonemapPass.encode(
-                encoder,
-                inputTexture: rgba16Texture,
-                outputTexture: outputTexture
-            )
-        } catch {
-            tonemapPass.encode(
-                encoder,
-                inputTexture: oneChannelTexture,
-                outputTexture: outputTexture
-            )
-        }
+        // Tonemap
+        let tonemapEncoder = try context.makeComputeEncoder(
+            commandBuffer: commandBuffer
+        )
+        tonemapPass.encode(
+            tonemapEncoder,
+            inputTexture: heatmapTexture,
+            outputTexture: outputTexture
+        )
+        tonemapEncoder.endEncoding()
 
         return outputTexture
+    }
+}
+
+// MARK: - Private properties
+extension ProcessingPipeline {
+    private func makeOneChannelTextureOptions(
+        width: Int,
+        height: Int
+    ) -> PipelineTextureOptions {
+        PipelineTextureOptions(
+            width: width,
+            height: height,
+            pixelFormat: .r16Float
+        )
+    }
+
+    private func make16FloatTextureOptions(
+        width: Int,
+        height: Int
+    ) -> PipelineTextureOptions {
+        PipelineTextureOptions(
+            width: width,
+            height: height,
+            pixelFormat: .rgba16Float
+        )
+    }
+
+    private func makeOutputTextureOptions(
+        width: Int,
+        height: Int
+    ) -> PipelineTextureOptions {
+        PipelineTextureOptions(
+            width: width,
+            height: height,
+            pixelFormat: context.pixelFormat
+        )
     }
 }

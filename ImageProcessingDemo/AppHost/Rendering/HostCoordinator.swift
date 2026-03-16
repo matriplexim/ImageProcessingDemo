@@ -7,12 +7,15 @@
 
 import QuartzCore
 
-final class HostCoordinator {
+@MainActor final class HostCoordinator {
     // MARK: Private properties
     private let renderer: Renderer
 
     private var renderState: RenderState?
-    private var hasRenderedFirstFrame = false
+    private var nextRenderState: RenderState?
+
+    private var isLayerAttached = false
+    private var isRendering = false
 
     // MARK: Initialization
     init(renderer: Renderer) {
@@ -23,53 +26,71 @@ final class HostCoordinator {
     /// Attach Metal layer to connect with GPU device and set up needed settings
     /// - Parameter layer: Layer of Metal to draw by GPU
     func attachLayer(_ layer: CAMetalLayer) {
+        guard !isLayerAttached else {
+            return
+        }
+
+        isLayerAttached = true
         renderer.bind(to: layer)
     }
 
     /// Update render state to draw new frame
     /// - Parameter state: Render state
     func updateRenderState(_ state: RenderState?) {
-        guard let state else {
+        guard let state,
+              renderState?.frameID != state.frameID else {
             return
         }
 
-        // Check first frame rendering process
-        guard hasRenderedFirstFrame else {
-            renderState = state
+        if isRendering {
+            nextRenderState = state
             return
         }
 
         renderState = state
+        isRendering = true
+        Task {
+            await runRenderPipeline(withState: state)
+        }
+    }
+}
+
+// MARK: - Private methods
+extension HostCoordinator {
+    private func drawFrame(withTexture texture: MTLTexture) async {
+        await renderer.prewarm(texture: texture)
+        await renderer.draw(texture: texture)
+    }
+
+    private func runRenderPipeline(withState state: RenderState) async {
+        defer {
+            completeRenderPipeline()
+        }
+
         switch state.mode {
         case .initialDemo:
-            renderer.prepareResources(texture: state.texture)
-            renderer.draw(texture: state.texture)
+            await drawFrame(withTexture: state.texture)
         case .processingDemo(let computeSettings):
-            renderer.makeProcessing(
-                texture: state.texture,
-                processingType: computeSettings.type,
-                isOptimized: computeSettings.isOptimized
-            ) { [weak self] texture in
-                guard let texture else {
-                    return
-                }
-
-                self?.renderer.draw(texture: texture)
-            }
-        case .processingBenchmark(let computeSettings):
-            break
-        case .benchmark:
+            do {
+                let processedTexture = try await renderer.makeProcessing(
+                    texture: state.texture,
+                    processingType: computeSettings.type,
+                    isOptimized: computeSettings.isOptimized
+                )
+                await renderer.draw(texture: processedTexture)
+            } catch { /* Error */ }
+        default:
             break
         }
     }
 
-    func renderFirstFrameIfNeeded() {
-        guard !hasRenderedFirstFrame,
-              let texture = renderState?.texture else {
+    private func completeRenderPipeline() {
+        isRendering = false
+        guard let nextRenderState else {
             return
         }
 
-        hasRenderedFirstFrame = true
-        renderer.draw(texture: texture)
+        self.nextRenderState = nil
+        updateRenderState(nextRenderState)
     }
 }

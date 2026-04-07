@@ -90,6 +90,7 @@ final actor Renderer {
             forTexture: texture,
             processingType: processingType
         )
+
         let resultTexture = try pipelineRegistry.encode(
             commandBuffer: buffer,
             texture: texture,
@@ -97,9 +98,9 @@ final actor Renderer {
             isOptimized: isOptimized
         )
 
-        // It's solution for certain processing with sync
         await withCheckedContinuation { continuation in
             buffer.addCompletedHandler { completedBuffer in
+                print("GPU Latency: \(completedBuffer.gpuEndTime - completedBuffer.gpuStartTime)")
                 continuation.resume()
             }
 

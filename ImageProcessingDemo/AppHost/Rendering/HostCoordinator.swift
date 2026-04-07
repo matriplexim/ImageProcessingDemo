@@ -59,7 +59,7 @@ import QuartzCore
 extension HostCoordinator {
     private func drawFrame(withTexture texture: MTLTexture) async {
         await renderer.prewarm(texture: texture)
-        await renderer.draw(texture: texture)
+        renderer.draw(texture: texture)
     }
 
     private func runRenderPipeline(withState state: RenderState) async {
@@ -77,7 +77,7 @@ extension HostCoordinator {
                     processingType: computeSettings.type,
                     isOptimized: computeSettings.isOptimized
                 )
-                await renderer.draw(texture: processedTexture)
+                renderer.draw(texture: processedTexture)
             } catch { /* Error */ }
         default:
             break

@@ -32,7 +32,6 @@ extension RenderState {
         case initialDemo
         case processingDemo(ComputeSettings)
         case processingBenchmark(ComputeSettings)
-        case benchmark
     }
 }
 

@@ -25,7 +25,7 @@ struct ImageProcessingScreen: View {
                 Text("Compute type: \(viewModel.computeType.id)")
                     .font(.headline)
                     .bold()
-                Text("Image size: \(viewModel.image?.size ?? "Undefined")")
+                Text("Image size: \(viewModel.image?.sizeDescription ?? "Undefined")")
                     .font(.headline)
                     .bold()
 
@@ -43,9 +43,10 @@ struct ImageProcessingScreen: View {
 
                 VStack {
                     Text("USER METRICS")
-                    Text("FPS: __:__:__")
-                    Text("Latency: __:__:__")
-                    Text("Tail latency: __:__:__")
+                    metricsView(name: "Latency", value: viewModel.latency)
+                    metricsView(name: "P95", value: viewModel.p95)
+                    metricsView(name: "P99", value: viewModel.p99)
+                    metricsView(name: "FPS", value: viewModel.fps)
                 }
                 .opacity(viewModel.appState.isDemo ? 0.0 : 1.0)
 
@@ -61,11 +62,12 @@ struct ImageProcessingScreen: View {
                                     ZStack {
                                         RoundedRectangle(cornerRadius: 15)
                                         
-                                        Text(image.id)
+                                        Text(image.name)
                                             .foregroundStyle(.background)
                                             .font(.title)
                                             .padding(10)
                                     }
+                                    .opacity(viewModel.image?.id == image.id ? 1.0 : 0.5)
                                 })
                                 .padding(.leading, image.id == viewModel.state.images.first?.id ? 20 : 0)
                                 .padding(.trailing, image.id == viewModel.state.images.last?.id ? 20 : 0)
@@ -85,6 +87,7 @@ struct ImageProcessingScreen: View {
                                     Text(type.id)
                                         .foregroundStyle(.background)
                                 }
+                                .opacity(viewModel.processingType == type ? 1.0 : 0.5)
                             })
                         }
                     }
@@ -101,6 +104,7 @@ struct ImageProcessingScreen: View {
                                     Text(type.id)
                                         .foregroundStyle(.background)
                                 }
+                                .opacity(viewModel.computeType == type ? 1.0 : 0.5)
                             })
                         }
                     }
@@ -117,6 +121,7 @@ struct ImageProcessingScreen: View {
                                     Text(state.id)
                                         .foregroundStyle(.background)
                                 }
+                                .opacity(viewModel.appState.id == state.id ? 1.0 : 0.5)
                             })
                         }
                     }
@@ -146,6 +151,14 @@ struct ImageProcessingScreen: View {
                     .padding(.horizontal, 20)
                 }
             }
+        }
+    }
+
+    @ViewBuilder private func metricsView(name: String, value: Double?) -> some View {
+        if let value {
+            Text("\(name): \(value)")
+        } else {
+            Text("\(name): N/A")
         }
     }
 }

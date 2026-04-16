@@ -15,6 +15,7 @@ final actor Renderer {
     private let lutProvider: LUTProvider
     private nonisolated let renderPipeline: RenderPipeline
     private let pipelineRegistry: ComputePipelineRegistry
+    private weak var delegate: RendererDelegate?
 
     @MainActor
     private var layer: CAMetalLayer?
@@ -34,6 +35,10 @@ final actor Renderer {
             texturePool: texturePool,
             lutProvider: lutProvider
         )
+    }
+
+    func setDelegate(_ delegate: RendererDelegate) {
+        self.delegate = delegate
     }
 
     // MARK: Internal methods
@@ -80,8 +85,12 @@ final actor Renderer {
     func makeProcessing(
         texture: MTLTexture,
         processingType: ProcessingType,
-        isOptimized: Bool
+        isOptimized: Bool,
+        withMetrics: Bool,
+        withFinish: Bool
     ) async throws -> MTLTexture {
+        delegate?.didStartProcessing()
+        let frameStartTime = CACurrentMediaTime()
         let buffer = try context.makeCommandBuffer(label: "Compute Buffer")
 
         lutProvider.prepareLUTTextureIfNeeded(commandBuffer: buffer, type: .minimal)
@@ -98,9 +107,16 @@ final actor Renderer {
             isOptimized: isOptimized
         )
 
+        var latency: Double?
         await withCheckedContinuation { continuation in
+            let commitTime = CACurrentMediaTime()
+
             buffer.addCompletedHandler { completedBuffer in
-                print("GPU Latency: \(completedBuffer.gpuEndTime - completedBuffer.gpuStartTime)")
+                let totalLatency = CACurrentMediaTime() - frameStartTime
+                // let queueLatency = completedBuffer.gpuStartTime - commitTime
+                // let gpuLatency = completedBuffer.gpuEndTime - completedBuffer.gpuStartTime
+                latency = totalLatency
+
                 continuation.resume()
             }
 
@@ -108,6 +124,15 @@ final actor Renderer {
         }
 
         textureSet.releaseAll()
+
+        if withMetrics, let latency {
+            delegate?.didReceiveLatency(latency)
+        }
+
+        if withFinish {
+            delegate?.didFinishProcessing()
+        }
+
         return resultTexture
     }
 

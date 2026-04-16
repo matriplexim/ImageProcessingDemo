@@ -9,6 +9,11 @@ import UIKit
 
 struct ProcessingImage: Identifiable {
     let id: String
-    let size: String
+    let name: String
+    let size: CGSize
     let data: UIImage?
+
+    var sizeDescription: String {
+        "\(size.width) x \(size.height) pixels"
+    }
 }

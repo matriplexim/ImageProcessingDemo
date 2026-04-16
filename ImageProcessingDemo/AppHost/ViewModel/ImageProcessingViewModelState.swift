@@ -11,35 +11,29 @@ import UIKit
 final class ImageProcessingViewModelState: ObservableObject {
     let images: [ProcessingImage] = [
         ProcessingImage(
-            id: "128 pixels",
-            size: "128 × 128 pixels",
-            data: UIImage(named: "cat_128")
+            id: "low",
+            name: "Low size image",
+            size: CGSize(width: 1000, height: 667),
+            data: UIImage(named: "cat_low")
         ),
         ProcessingImage(
-            id: "SD",
-            size: "259 × 194 pixels",
-            data: UIImage(named: "cat_sd")
+            id: "medium",
+            name: "Medium size image",
+            size: CGSize(width: 1500, height: 1000),
+            data: UIImage(named: "cat_medium")
         ),
         ProcessingImage(
-            id: "Full HD",
-            size: "1920 × 1080 pixels",
-            data: UIImage(named: "cat_full_hd")
+            id: "large",
+            name: "Large size image",
+            size: CGSize(width: 2000, height: 1333),
+            data: UIImage(named: "cat_large")
         ),
         ProcessingImage(
-            id: "2K",
-            size: "2560 × 1440 pixels",
-            data: UIImage(named: "cat_2K")
-        ),
-        ProcessingImage(
-            id: "4K",
-            size: "3840 × 2160 pixels",
-            data: UIImage(named: "cat_4K")
-        ),
-        ProcessingImage(
-            id: "High resolution",
-            size: "5376 × 3072 pixels",
-            data: UIImage(named: "cat_high_resolution")
-        ),
+            id: "high",
+            name: "High quality image",
+            size: CGSize(width: 5824, height: 3264),
+            data: UIImage(named: "cat_high")
+        )
     ]
 
     private(set) var processingTypes: [ProcessingType] = [

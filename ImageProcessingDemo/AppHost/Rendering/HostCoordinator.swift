@@ -75,12 +75,17 @@ extension HostCoordinator {
                 let processedTexture = try await renderer.makeProcessing(
                     texture: state.texture,
                     processingType: computeSettings.type,
-                    isOptimized: computeSettings.isOptimized
+                    isOptimized: computeSettings.isOptimized,
+                    withMetrics: true,
+                    withFinish: true
                 )
                 renderer.draw(texture: processedTexture)
             } catch { /* Error */ }
-        default:
-            break
+        case .processingBenchmark(let computeSettings):
+            await benchmarkProcessing(
+                texture: state.texture,
+                computeSettings: computeSettings
+            )
         }
     }
 
@@ -92,5 +97,49 @@ extension HostCoordinator {
 
         self.nextRenderState = nil
         updateRenderState(nextRenderState)
+    }
+
+    private func benchmarkProcessing(
+        texture: MTLTexture,
+        computeSettings: RenderState.ComputeSettings
+    ) async {
+        var inputTexture = texture
+        for _ in 0...50 {
+            do {
+                let resultTexture = try await renderer.makeProcessing(
+                    texture: inputTexture,
+                    processingType: computeSettings.type,
+                    isOptimized: computeSettings.isOptimized,
+                    withMetrics: false,
+                    withFinish: false
+                )
+                inputTexture = resultTexture
+            } catch {
+                print("Benchmark processing failed: \(error)")
+            }
+        }
+
+        let start = CACurrentMediaTime()
+        print("### Start")
+        for i in 0...1000 {
+            do {
+                let resultTexture = try await renderer.makeProcessing(
+                    texture: inputTexture,
+                    processingType: computeSettings.type,
+                    isOptimized: computeSettings.isOptimized,
+                    withMetrics: true,
+                    withFinish: i == 1000 ? true : false
+                )
+                inputTexture = resultTexture
+            } catch {
+                print("Benchmark processing failed: \(error)")
+            }
+        }
+        let end = CACurrentMediaTime()
+        let gap = end - start
+        let frameTime = gap / 1000
+        let fps = 1.0 / frameTime
+
+        print("### FPS: \(fps)")
     }
 }

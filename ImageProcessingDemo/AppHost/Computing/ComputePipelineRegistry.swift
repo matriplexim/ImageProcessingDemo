@@ -14,6 +14,7 @@ final class ComputePipelineRegistry {
 
     private let singleGrayscalePipeline: GrayscaleSinglePassPipeline
     private let singleSobelPipeline: SobelSinglePassPipeline
+    private let singleGaussianBlurPipeline: GaussianBlurSinglePassPipeline
     private let multiPassSobelPipeline: SobelMultiPassPipeline
     private let processingPipeline: ProcessingPipeline
 
@@ -27,6 +28,7 @@ final class ComputePipelineRegistry {
         self.texturePool = texturePool
         singleGrayscalePipeline = try GrayscaleSinglePassPipeline(context: context)
         singleSobelPipeline = try SobelSinglePassPipeline(context: context)
+        singleGaussianBlurPipeline = try GaussianBlurSinglePassPipeline(context: context)
         multiPassSobelPipeline = try SobelMultiPassPipeline(
             context: context,
             texturePool: texturePool
@@ -48,6 +50,10 @@ final class ComputePipelineRegistry {
             width: texture.width,
             height: texture.height
         )
+        let singleGaussianBlurRequirements = singleGaussianBlurPipeline.makeTextureRequirements(
+            width: texture.width,
+            height: texture.height
+        )
         let multiPassRequirements = multiPassSobelPipeline.makeTextureRequirements(
             width: texture.width,
             height: texture.height
@@ -61,6 +67,7 @@ final class ComputePipelineRegistry {
             requirements: [
                 grayscaleRequirements,
                 singleSobelRequirements,
+                singleGaussianBlurRequirements,
                 multiPassRequirements,
                 processingRequirements
             ].flatMap(\.self)
@@ -98,6 +105,11 @@ final class ComputePipelineRegistry {
                 width: texture.width,
                 height: texture.height
             )
+        case .gaussianBlur:
+            requirements = singleGaussianBlurPipeline.makeTextureRequirements(
+                width: texture.width,
+                height: texture.height
+            )
         }
 
         await textureSet.prewarm(requirements: requirements)
@@ -107,13 +119,15 @@ final class ComputePipelineRegistry {
     func encode(
         commandBuffer: MTLCommandBuffer,
         texture: MTLTexture,
+        textureSet: PipelineTextureSet,
         processingType: ProcessingType,
         isOptimized: Bool
     ) throws -> MTLTexture {
-        let textureSet = PipelineTextureSet(
-            context: context,
-            texturePool: texturePool
-        )
+        // TODO: Убрать если нужен перф без реюза текстур
+        // let textureSet = PipelineTextureSet(
+        //     context: context,
+        //     texturePool: texturePool
+        // )
 
         let outputTexture: MTLTexture
         switch makePassKey(by: processingType, isOptimized: isOptimized) {
@@ -143,6 +157,12 @@ final class ComputePipelineRegistry {
                 textureSet: textureSet,
                 isOptimized: isOptimized
             )
+        case .gaussianBlur:
+            outputTexture = try singleGaussianBlurPipeline.encode(
+                commandBuffer: commandBuffer,
+                texture: texture,
+                textureSet: textureSet
+            )
         }
 
         return outputTexture
@@ -164,6 +184,8 @@ extension ComputePipelineRegistry {
             return .multiPassSobel(isOptimized: isOptimized)
         case .fullProcessing:
             return .processing(isOptimized: isOptimized)
+        case .gaussianBlur:
+            return .gaussianBlur
         }
     }
 }
@@ -175,5 +197,6 @@ extension ComputePipelineRegistry {
         case sobel
         case multiPassSobel(isOptimized: Bool)
         case processing(isOptimized: Bool)
+        case gaussianBlur
     }
 }

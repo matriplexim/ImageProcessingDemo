@@ -46,9 +46,14 @@ final class ImageProcessingViewModelState: ObservableObject {
     func setupComputeType(_ computeType: ComputeType) {
         switch computeType {
         case .cpu:
-            processingTypes.removeAll(where: { $0 == .multiPassSobel })
+            processingTypes.removeAll(where: { $0.isOnlyGPU })
         case .gpu:
-            processingTypes.append(.multiPassSobel)
+            if !processingTypes.contains(where: { $0 == .multiPassSobel }) {
+                processingTypes.append(.multiPassSobel)
+            }
+            if !processingTypes.contains(where: { $0 == .gaussianBlur }) {
+                processingTypes.append(.gaussianBlur)
+            }
         }
     }
 }

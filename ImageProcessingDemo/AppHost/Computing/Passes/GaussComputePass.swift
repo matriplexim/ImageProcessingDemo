@@ -8,27 +8,38 @@
 import Metal
 
 struct GaussComputePass {
+    private let context: GPUContext
+    private var benchmarkPipeline: MTLComputePipelineState!
     private let naivePipeline: MTLComputePipelineState
     private let optimizedHorizontalPipeline: MTLComputePipelineState
     private let optimizedVerticalPipeline: MTLComputePipelineState
 
     init(context: GPUContext) throws {
+        self.context = context
+        let benchmarkPipeline = context.makePipeline(
+            functionName: FilterType.benchmarkGaussianBlur.functionName
+        )
         let naivePipeline = context.makePipeline(
-            functionName: FilterType.naiveGauss.functionName)
+            functionName: FilterType.naiveGauss.functionName
+        )
         let optimizedHorizontalPipeline = context.makePipeline(
-            functionName: FilterType.optimizedHorizontalGauss.functionName)
+            functionName: FilterType.optimizedHorizontalGauss.functionName
+        )
         let optimizedVerticalPipeline = context.makePipeline(
-            functionName: FilterType.optimizedVerticalGauss.functionName)
+            functionName: FilterType.optimizedVerticalGauss.functionName
+        )
 
         guard let naivePipeline,
               let optimizedHorizontalPipeline,
-              let optimizedVerticalPipeline else {
+              let optimizedVerticalPipeline,
+              let benchmarkPipeline else {
             throw ProcessingError.pipelineCreateFailed
         }
 
         self.naivePipeline = naivePipeline
         self.optimizedHorizontalPipeline = optimizedHorizontalPipeline
         self.optimizedVerticalPipeline = optimizedVerticalPipeline
+        self.benchmarkPipeline = benchmarkPipeline
     }
 
     func encode(
@@ -37,8 +48,12 @@ struct GaussComputePass {
         outputTexture: MTLTexture,
         subtype: GaussComputePass.Subtype
     ) {
+        let benchmarkPipeline = context.makePipeline(
+            functionName: FilterType.benchmarkGaussianBlur.functionName
+        )
+
         encoder.label = makeEncoderLabel(by: subtype)
-        encoder.setComputePipelineState(makePipelineState(by: subtype))
+        encoder.setComputePipelineState(benchmarkPipeline!)
 
         encoder.setTexture(inputTexture, index: 0)
         encoder.setTexture(outputTexture, index: 1)
@@ -66,6 +81,8 @@ extension GaussComputePass {
             FilterType.optimizedHorizontalGauss.encoderLabel
         case .optimizedVertical:
             FilterType.optimizedVerticalGauss.encoderLabel
+        case .benchmark:
+            FilterType.benchmarkGaussianBlur.encoderLabel
         }
     }
 
@@ -79,6 +96,8 @@ extension GaussComputePass {
             optimizedHorizontalPipeline
         case .optimizedVertical:
             optimizedVerticalPipeline
+        case .benchmark:
+            benchmarkPipeline
         }
     }
 }
@@ -89,5 +108,6 @@ extension GaussComputePass {
         case naive
         case optimizedHorizontal
         case optimizedVertical
+        case benchmark
     }
 }

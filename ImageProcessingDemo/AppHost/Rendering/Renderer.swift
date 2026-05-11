@@ -15,11 +15,14 @@ final actor Renderer {
     private let lutProvider: LUTProvider
     private nonisolated let renderPipeline: RenderPipeline
     private let pipelineRegistry: ComputePipelineRegistry
+    private let captureManager: MTLCaptureManager = .shared()
     private weak var delegate: RendererDelegate?
 
     @MainActor
     private var layer: CAMetalLayer?
     private var currentTextureOptions: Renderer.TextureOptions?
+
+    private var counter: Int = 0
 
     // MARK: Initialization
     init(context: GPUContext) throws {
@@ -67,6 +70,7 @@ final actor Renderer {
     /// Draw texture by Metal
     /// - Parameter texture: Texture to drawing
     @MainActor func draw(texture: MTLTexture) {
+        let frameStartTime = CACurrentMediaTime()
         guard let drawable = layer?.nextDrawable(),
               let buffer = try? context.makeCommandBuffer(label: "Render Buffer") else {
             return
@@ -79,6 +83,10 @@ final actor Renderer {
         )
 
         buffer.present(drawable)
+        buffer.addCompletedHandler { _ in
+            let frameEndTime = CACurrentMediaTime()
+            _ = frameEndTime - frameStartTime
+        }
         buffer.commit()
     }
 
@@ -89,6 +97,14 @@ final actor Renderer {
         withMetrics: Bool,
         withFinish: Bool
     ) async throws -> MTLTexture {
+        if withMetrics {
+            counter += 1
+        }
+
+        if counter == 301 {
+            makeCapture(commandQueue: context.commandQueue)
+        }
+
         delegate?.didStartProcessing()
         let frameStartTime = CACurrentMediaTime()
         let buffer = try context.makeCommandBuffer(label: "Compute Buffer")
@@ -103,24 +119,25 @@ final actor Renderer {
         let resultTexture = try pipelineRegistry.encode(
             commandBuffer: buffer,
             texture: texture,
+            textureSet: textureSet,
             processingType: processingType,
             isOptimized: isOptimized
         )
 
         var latency: Double?
         await withCheckedContinuation { continuation in
-            let commitTime = CACurrentMediaTime()
-
-            buffer.addCompletedHandler { completedBuffer in
-                let totalLatency = CACurrentMediaTime() - frameStartTime
-                // let queueLatency = completedBuffer.gpuStartTime - commitTime
-                // let gpuLatency = completedBuffer.gpuEndTime - completedBuffer.gpuStartTime
-                latency = totalLatency
+            buffer.addCompletedHandler { _ in
+                let frameEndTime = CACurrentMediaTime()
+                latency = frameEndTime - frameStartTime
 
                 continuation.resume()
             }
 
             buffer.commit()
+        }
+
+        if counter == 500, captureManager.isCapturing {
+            captureManager.stopCapture()
         }
 
         textureSet.releaseAll()
@@ -141,6 +158,21 @@ final actor Renderer {
     /// - Returns: Texture to render pipeline
     nonisolated func makeTexture(image: UIImage) -> MTLTexture? {
         image.toMTLTexture(device: context.device)
+    }
+}
+
+// MARK: - Private methods
+extension Renderer {
+    private func makeCapture(commandQueue: MTLCommandQueue) {
+        let descriptor = MTLCaptureDescriptor()
+        descriptor.captureObject = commandQueue
+        descriptor.destination = .developerTools
+
+        do {
+            try captureManager.startCapture(with: descriptor)
+        } catch {
+            print("Capture manager failed: \(error)")
+        }
     }
 }
 

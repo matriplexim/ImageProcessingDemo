@@ -10,7 +10,7 @@ using namespace metal;
 
 kernel void singleNaiveSobelKernel(
     uint2 gridID [[thread_position_in_grid]],
-    texture2d<half, access::sample> input [[texture(0)]],
+    texture2d<float, access::sample> input [[texture(0)]],
     texture2d<float, access::write> output [[texture(1)]]
 ) {
     if (gridID.x >= input.get_width() ||
@@ -45,9 +45,8 @@ kernel void singleNaiveSobelKernel(
 
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
-            half4 color = input.sample(SAMPLER, baseCoord + float2(x, y));
-            float4 fcolor = float4(color);
-            float intensity = dot(fcolor.rgb, LUMA);
+            float4 color = input.sample(SAMPLER, baseCoord + float2(x, y));
+            float intensity = dot(color.rgb, LUMA);
 
             sumX += intensity * EDGE_X[y + 1][x + 1];
             sumY += intensity * EDGE_Y[y + 1][x + 1];

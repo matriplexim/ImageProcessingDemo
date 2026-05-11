@@ -117,13 +117,34 @@ extension ImageProcessingViewModel {
                 return
             }
 
-            let resultImage = await computeProcessor.processImage(
-                cgImage,
-                settings: RenderState.ComputeSettings(
-                    type: await processingType,
-                    isOptimized: await isOptimized
-                )
+            let computeSettings = RenderState.ComputeSettings(
+                type: await processingType,
+                isOptimized: await isOptimized
             )
+
+            let mode: RenderState.Mode = await appState.isDemo ?
+                .processingDemo(computeSettings) :
+                .processingBenchmark(computeSettings)
+
+            let resultImage: UIImage
+            switch mode {
+            case .processingBenchmark(let computeSettings):
+                resultImage = await computeProcessor.processImageBenchmark(
+                    cgImage,
+                    settings: computeSettings,
+                    completionLatency: { [weak self] latency in
+                        self?.didReceiveLatency(latency)
+                    }
+                )
+                await computeMetrics()
+            case .processingDemo(let computeSettings):
+                resultImage = await computeProcessor.processImage(
+                    cgImage,
+                    settings: computeSettings
+                )
+            case .initialDemo:
+                fatalError("Incorrect app state")
+            }
             await finishCPUProcessing(image: resultImage)
         }
     }
@@ -184,6 +205,7 @@ extension ImageProcessingViewModel {
         p99 = stats?.p99
         fps = stats?.fps
 
+        latencySum = .zero
         latencyMetrics.removeAll(keepingCapacity: true)
     }
 }
@@ -205,7 +227,7 @@ extension ImageProcessingViewModel: RendererDelegate {
 
     nonisolated func didReceiveLatency(_ latency: Double) {
         Task { @MainActor in
-            latencySum += latency * 1000
+            latencySum += latency
             latencyMetrics.append(latency)
         }
     }

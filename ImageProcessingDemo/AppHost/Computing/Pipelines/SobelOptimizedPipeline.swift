@@ -12,6 +12,7 @@ final class SobelMultiPassPipeline {
     private let context: GPUContext
     private let texturePool: TexturePool
     private let grayscalePass: GrayscaleComputePass
+    private let blurPass: GaussComputePass
     private let sobelPass: SobelComputePass
 
     // MARK: Initialization
@@ -19,12 +20,20 @@ final class SobelMultiPassPipeline {
         self.context = context
         self.texturePool = texturePool
         self.grayscalePass = try GrayscaleComputePass(context: context)
+        self.blurPass = try GaussComputePass(context: context)
         self.sobelPass = try SobelComputePass(context: context)
     }
 
     // MARK: Internal methods
     func makeTextureRequirements(width: Int, height: Int) -> [PipelineTextureRequirement] {
         [
+            PipelineTextureRequirement(
+                options: makeOneChannelOptions(
+                    width: width,
+                    height: height
+                ),
+                count: 1
+            ),
             PipelineTextureRequirement(
                 options: makeOneChannelOptions(
                     width: width,
@@ -48,7 +57,13 @@ final class SobelMultiPassPipeline {
         textureSet: PipelineTextureSet,
         isOptimized: Bool
     ) throws -> MTLTexture {
-        let oneChannelTexture = textureSet.getTexture(
+        let grayscaleTexture = textureSet.getTexture(
+            options: makeOneChannelOptions(
+                width: texture.width,
+                height: texture.height
+            )
+        )
+        let blurredTexture = textureSet.getTexture(
             options: makeOneChannelOptions(
                 width: texture.width,
                 height: texture.height
@@ -68,17 +83,28 @@ final class SobelMultiPassPipeline {
         grayscalePass.encode(
             grayscaleEncoder,
             inputTexture: texture,
-            outputTexture: oneChannelTexture,
+            outputTexture: grayscaleTexture,
             subtype: .default
         )
         grayscaleEncoder.endEncoding()
+
+        let blurEncoder = try context.makeComputeEncoder(
+            commandBuffer: commandBuffer
+        )
+        blurPass.encode(
+            blurEncoder,
+            inputTexture: grayscaleTexture,
+            outputTexture: blurredTexture,
+            subtype: .naive
+        )
+        blurEncoder.endEncoding()
 
         let sobelEncoder = try context.makeComputeEncoder(
             commandBuffer: commandBuffer
         )
         sobelPass.encode(
             sobelEncoder,
-            inputTexture: oneChannelTexture,
+            inputTexture: blurredTexture,
             outputTexture: outputTexture,
             subtype: isOptimized ? .optimized : .naive
         )

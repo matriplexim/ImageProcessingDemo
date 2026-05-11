@@ -8,6 +8,7 @@
 enum ProcessingType: Identifiable {
     case singleGrayscale
     case singleSobel
+    case gaussianBlur
     case multiPassSobel
     case fullProcessing
 
@@ -21,6 +22,17 @@ enum ProcessingType: Identifiable {
             "Grayscale"
         case .singleSobel:
             "Sobel"
+        case .gaussianBlur:
+            "Gaussian Blur"
+        }
+    }
+
+    var isOnlyGPU: Bool {
+        switch self {
+        case .gaussianBlur, .multiPassSobel:
+            true
+        case .fullProcessing, .singleGrayscale, .singleSobel:
+            false
         }
     }
 }

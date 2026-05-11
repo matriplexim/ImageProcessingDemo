@@ -16,6 +16,7 @@ enum FilterType {
     case singleGrayscale
     case singleSobel
     case tonemap
+    case benchmarkGaussianBlur
 }
 
 // MARK: - Internal properties
@@ -43,17 +44,19 @@ extension FilterType {
             "singleNaiveSobelKernel"
         case .tonemap:
             "tonemapKernel"
+        case .benchmarkGaussianBlur:
+            "badGaussianBlurKernel"
         }
     }
 
     var encoderLabel: String {
         switch self {
         case .naiveSobel:
-            "Naive Sobel"
+            "NaiveSobel"
         case .optimizedSobel:
-            "Optimized Sobel"
+            "OptimizedSobel"
         case .naiveGauss:
-            "Naive 2D Gaussian"
+            "Naive2DGaussian"
         case .optimizedHorizontalGauss:
             "Optimized Horizontal Gaussian"
         case .optimizedVerticalGauss:
@@ -68,6 +71,8 @@ extension FilterType {
             "Single Sobel"
         case .tonemap:
             "Tonemap"
+        case .benchmarkGaussianBlur:
+            "Bad Gaussian Blur"
         }
     }
 }

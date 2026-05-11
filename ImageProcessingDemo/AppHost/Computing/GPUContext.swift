@@ -10,9 +10,9 @@ import Metal
 final class GPUContext {
     // MARK: Private properties
     let device: MTLDevice
+    let commandQueue: MTLCommandQueue
     let pixelFormat: MTLPixelFormat
 
-    private let commandQueue: MTLCommandQueue
     private let library: MTLLibrary
 
     // MARK: Initialization

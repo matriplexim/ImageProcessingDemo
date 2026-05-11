@@ -95,6 +95,8 @@ kernel void optimizedSobelKernel(
             2.0 * tile[localY + 1][localX] + tile[localY + 1][localX + 1];
 
     float magnitude = saturate((abs(edgeX) + abs(edgeY)));
+    magnitude = saturate(magnitude);
+    magnitude = pow(magnitude, 1.0 / 2.2);
     float3 result = float3(magnitude);
 
     output.write(float4(result, 1.0), gridID);

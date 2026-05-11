@@ -10,6 +10,28 @@ import UIKit
 import CoreGraphics
 
 final class ComputeProcessor {
+    func processImageBenchmark(
+        _ cgImage: CGImage,
+        settings: RenderState.ComputeSettings,
+        completionLatency: @escaping (Double) -> Void
+    ) -> UIImage {
+        let allStartTime = CACurrentMediaTime()
+        var inputImage = cgImage
+
+        for _ in 1...25 {
+            let startTime = CACurrentMediaTime()
+            let result = processImage(inputImage, settings: settings)
+            let endTime = CACurrentMediaTime()
+            completionLatency(endTime - startTime)
+            inputImage = result.cgImage ?? cgImage
+        }
+
+        let allFinalTime = CACurrentMediaTime()
+        let allLatency = allFinalTime - allStartTime
+        print("All latency: \(allLatency)")
+        return UIImage(cgImage: inputImage)
+    }
+
     func processImage(
         _ cgImage: CGImage,
         settings: RenderState.ComputeSettings
@@ -29,7 +51,7 @@ final class ComputeProcessor {
             } else {
                 resultImage = processSobel(cgImage)
             }
-        case .multiPassSobel:
+        case .multiPassSobel, .gaussianBlur:
             break
         case .fullProcessing:
             resultImage = processFullProcessingVImage(cgImage)

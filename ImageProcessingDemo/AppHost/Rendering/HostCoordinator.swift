@@ -5,6 +5,7 @@
 //  Created by Максим Ломакин on 16.01.2026.
 //
 
+import Metal
 import QuartzCore
 
 @MainActor final class HostCoordinator {
@@ -104,7 +105,7 @@ extension HostCoordinator {
         computeSettings: RenderState.ComputeSettings
     ) async {
         var inputTexture = texture
-        for _ in 0...50 {
+        for _ in 1...50 {
             do {
                 let resultTexture = try await renderer.makeProcessing(
                     texture: inputTexture,
@@ -121,8 +122,9 @@ extension HostCoordinator {
 
         let start = CACurrentMediaTime()
         print("### Start")
-        for i in 0...1000 {
+        for i in 1...1000 {
             do {
+                // let innerStart = CACurrentMediaTime()
                 let resultTexture = try await renderer.makeProcessing(
                     texture: inputTexture,
                     processingType: computeSettings.type,
@@ -130,6 +132,9 @@ extension HostCoordinator {
                     withMetrics: true,
                     withFinish: i == 1000 ? true : false
                 )
+                // let innerEnd = CACurrentMediaTime()
+                // let innerLatency = innerEnd - innerStart
+                // print("Latency: \(innerLatency)")
                 inputTexture = resultTexture
             } catch {
                 print("Benchmark processing failed: \(error)")
